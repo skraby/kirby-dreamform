@@ -206,7 +206,7 @@ final class DreamForm
 	public static function currentPage(): Page|null
 	{
 		$path = App::instance()->request()->url()->toString();
-		$matches = Str::match($path, "/pages\/([a-zA-Z0-9-_+]+)\/?/m");
+		$matches = Str::match($path, "/pages\/([a-zA-Z0-9-_+@]+)\/?/m");
 
 		if (!$matches) {
 			return null;
