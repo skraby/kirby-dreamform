@@ -6,6 +6,7 @@ use Exception;
 use Kirby\Cms\App;
 use Kirby\Content\Content;
 use Kirby\Toolkit\Str;
+use tobimori\DreamForm\DreamForm;
 
 trait SubmissionMetadata
 {
@@ -22,7 +23,7 @@ trait SubmissionMetadata
 	 */
 	public function updateMetadata(array $data): static
 	{
-		return $this->updateAndSave([
+		return $this->update([
 			'dreamform_sender' => $this->metadata()->update($data)->toArray()
 		]);
 	}
@@ -32,7 +33,7 @@ trait SubmissionMetadata
 	 */
 	public function collectMetadata(): static
 	{
-		$datapoints = App::instance()->option('tobimori.dreamform.metadata.collect', []);
+		$datapoints = DreamForm::option('metadata.collect', []);
 
 		foreach ($datapoints as $type) {
 			if (method_exists($this, 'collect' . Str::camel($type))) {

@@ -3,6 +3,7 @@
 namespace tobimori\DreamForm\Actions;
 
 use Kirby\Http\Remote;
+use Kirby\Http\Url;
 use Throwable;
 
 /**
@@ -13,7 +14,7 @@ class WebhookAction extends Action
 	public static function blueprint(): array
 	{
 		return [
-			'title' => t('dreamform.webhook-action'),
+			'name' => t('dreamform.actions.webhook.name'),
 			'preview' => 'fields',
 			'wysiwyg' => true,
 			'icon' => 'webhook',
@@ -22,14 +23,14 @@ class WebhookAction extends Action
 					'label' => t('dreamform.settings'),
 					'fields' => [
 						'webhookUrl' => [
-							'label' => 'dreamform.webhook-url',
+							'label' => 'dreamform.actions.webhook.url.label',
 							'type' => 'url',
 							'placeholder' => 'https://hooks.zapier.com/hooks/catch/...',
 							'width' => '1/3',
 							'required' => true
 						],
 						'exposedFields' => [
-							'label' => 'dreamform.exposed-fields',
+							'label' => 'dreamform.actions.webhook.exposedFields.label',
 							'extends' => 'dreamform/fields/field',
 							'type' => 'multiselect',
 							'width' => '2/3'
@@ -69,13 +70,30 @@ class WebhookAction extends Action
 				],
 				'data' => json_encode($content)
 			]);
-
-			if ($request->code() > 299) {
-				$this->cancel();
-			}
 		} catch (Throwable $e) {
 			// (this will only be shown in the frontend if debug mode is enabled)
 			$this->cancel($e->getMessage());
 		}
+
+		if ($request->code() > 299) {
+			$this->cancel('dreamform.actions.webhook.log.error');
+		}
+
+		$this->log([
+			'template' => [
+				'url' => Url::toObject($request->url())->domain()
+			]
+		], type: 'none', icon: 'webhook', title: 'dreamform.actions.webhook.log.success');
+	}
+
+	/**
+	 * Returns the base log settings for the action
+	 */
+	protected function logSettings(): array|bool
+	{
+		return [
+			'icon' => 'webhook',
+			'title' => 'dreamform.actions.webhook.name'
+		];
 	}
 }

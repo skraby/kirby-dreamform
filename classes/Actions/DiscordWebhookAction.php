@@ -6,16 +6,20 @@ use Kirby\Cms\App;
 use Kirby\Data\Json;
 use Kirby\Http\Remote;
 use Throwable;
+use tobimori\DreamForm\DreamForm;
 
 /**
  * Action for sending a message in a discord channel.
  */
 class DiscordWebhookAction extends Action
 {
+	/**
+	 * Returns the Blocks fieldset blueprint for the actions' settings
+	 */
 	public static function blueprint(): array
 	{
 		return [
-			'title' => t('dreamform.discord-webhook-action'),
+			'name' => t('dreamform.actions.discord.name'),
 			'preview' => 'fields',
 			'wysiwyg' => true,
 			'icon' => 'discord',
@@ -24,14 +28,15 @@ class DiscordWebhookAction extends Action
 					'label' => t('settings'),
 					'fields' => [
 						'webhookUrl' => [
-							'label' => 'dreamform.webhook-url',
-							'type' => 'url',
+							'label' => 'dreamform.actions.webhook.url.label',
+							'type' => 'text',
+							'pattern' => 'https:\/\/discord\.com\/api\/webhooks\/.+\/.+',
 							'placeholder' => 'https://discord.com/api/webhooks/...',
 							'width' => '1/3',
-							'required' => !App::instance()->option('tobimori.dreamform.actions.discord.webhook')
+							'required' => !DreamForm::option('actions.discord.webhook')
 						],
 						'exposedFields' => [
-							'label' => 'dreamform.exposed-fields',
+							'label' => 'dreamform.actions.webhook.exposedFields.label',
 							'extends' => 'dreamform/fields/field',
 							'type' => 'multiselect',
 							'width' => '2/3'
@@ -42,12 +47,18 @@ class DiscordWebhookAction extends Action
 		];
 	}
 
-	public function webhookUrl(): string
+	/**
+	 * Returns the webhook URL
+	 */
+	protected function webhookUrl(): string
 	{
-		return $this->block()->webhookUrl()->or(App::instance()->option('tobimori.dreamform.actions.discord.webhook'));
+		return $this->block()->webhookUrl()->or(DreamForm::option('actions.discord.webhook'));
 	}
 
-	public function content(): string
+	/**
+	 * Returns the content to be sent to Discord
+	 */
+	protected function content(): string
 	{
 		// get all fields that should be exposed, or use all fields if none are specified
 		$exposed = $this->block()->exposedFields()->split();
@@ -70,11 +81,15 @@ class DiscordWebhookAction extends Action
 		return $content;
 	}
 
+	/**
+	 * Run the action
+	 */
 	public function run(): void
 	{
 		try {
 			$request = Remote::post($this->webhookUrl(), [
 				'headers' => [
+					'User-Agent' => DreamForm::userAgent(),
 					'Content-Type' => 'application/json'
 				],
 				'data' => Json::encode([
@@ -96,13 +111,24 @@ class DiscordWebhookAction extends Action
 					'attachments' => []
 				])
 			]);
-
-			if ($request->code() > 299) {
-				$this->cancel();
-			}
 		} catch (Throwable $e) {
 			$this->cancel($e->getMessage());
 		}
+
+		if ($request->code() > 299) {
+			$this->cancel('dreamform.actions.discord.log.error');
+		}
+
+		$meta = Remote::get($this->webhookUrl(), [
+			'headers' => [
+				'User-Agent' => DreamForm::userAgent()
+			]
+		]);
+		$this->log([
+			'template' => [
+				'name' => $meta->json()['name'],
+			]
+		], type: 'none', icon: 'discord', title: 'dreamform.actions.discord.log.success');
 	}
 
 	/**
@@ -110,6 +136,17 @@ class DiscordWebhookAction extends Action
 	 */
 	public static function group(): string
 	{
-		return 'notification';
+		return 'notifications';
+	}
+
+	/**
+	 * Returns the base log settings for the action
+	 */
+	protected function logSettings(): array|bool
+	{
+		return [
+			'icon' => 'discord',
+			'title' => 'dreamform.actions.discord.name'
+		];
 	}
 }

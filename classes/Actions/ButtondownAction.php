@@ -10,14 +10,57 @@ use Kirby\Toolkit\Str;
 use Kirby\Toolkit\V;
 use tobimori\DreamForm\DreamForm;
 
+/**
+ * Action for subscribing a user to a Buttondown newsletter list.
+ * Docs: https://api.buttondown.email/v1/docs
+ */
 class ButtondownAction extends Action
 {
+	/**
+	 * Returns whether the Buttondown simple mode is enabled
+	 * Simple mode supports free plans, rmoves tags support/sending reminders
+	 */
 	protected static function simpleMode(): bool
 	{
-		return App::instance()->option('tobimori.dreamform.actions.buttondown.simpleMode') === true;
+		return DreamForm::option('actions.buttondown.simpleMode') === true;
 	}
 
-	public static function tagsBlueprint(): array
+	/**
+	 * Returns the Blocks fieldset blueprint for the actions' settings
+	 */
+	public static function blueprint(): array
+	{
+		return [
+			'name' => t('dreamform.actions.buttondown.name'),
+			'preview' => 'fields',
+			'wysiwyg' => true,
+			'icon' => 'buttondown',
+			'tabs' => [
+				'settings' => [
+					'label' => t('dreamform.settings'),
+					'fields' => A::merge([
+						'emailField' => [
+							'label' => t('dreamform.actions.buttondown.emailField.label'),
+							'required' => true,
+							'extends' => 'dreamform/fields/field',
+							'width' => '1/3'
+						],
+						'exposeMetadata' => [
+							'label' => t('dreamform.actions.buttondown.exposeMetadata.label'),
+							'extends' => 'dreamform/fields/field',
+							'type' => 'multiselect',
+							'width' => '2/3'
+						],
+					], static::tagsBlueprint())
+				]
+			]
+		];
+	}
+
+	/**
+	 * Returns the tag assignment part of the panel blueprint
+	 */
+	protected static function tagsBlueprint(): array
 	{
 		if (static::simpleMode()) {
 			return [];
@@ -26,7 +69,7 @@ class ButtondownAction extends Action
 		return [
 			'line' => true,
 			'tags' => [
-				'label' => t('dreamform.assign-tags-to-subscriber'),
+				'label' => t('dreamform.actions.buttondown.tags.label'),
 				'extends' => 'dreamform/fields/static-dynamic-toggles',
 				'width' => '1/3'
 			],
@@ -48,35 +91,6 @@ class ButtondownAction extends Action
 				]),
 				'when' => [
 					'tags' => 'static'
-				]
-			]
-		];
-	}
-
-	public static function blueprint(): array
-	{
-		return [
-			'title' => t('dreamform.buttondown-action'),
-			'preview' => 'fields',
-			'wysiwyg' => true,
-			'icon' => 'buttondown',
-			'tabs' => [
-				'settings' => [
-					'label' => t('dreamform.settings'),
-					'fields' => A::merge([
-						'emailField' => [
-							'label' => t('dreamform.use-email-from'),
-							'required' => true,
-							'extends' => 'dreamform/fields/field',
-							'width' => '1/3'
-						],
-						'exposeMetadata' => [
-							'label' => t('dreamform.expose-fields-as-metadata'),
-							'extends' => 'dreamform/fields/field',
-							'type' => 'multiselect',
-							'width' => '2/3'
-						],
-					], static::tagsBlueprint())
 				]
 			]
 		];
@@ -126,24 +140,24 @@ class ButtondownAction extends Action
 	{
 		// check if email is valid
 		$emailField = $this->block()->emailField()->value();
-		$email = $this->submission()->valueForId($emailField);
-
-		if (!$email || $email?->isEmpty()) {
+		$email = $this->submission()->valueForId($emailField)?->value();
+		if (!$email) {
 			return;
 		}
 
-		if (!V::email($email->value())) {
-			$this->cancel(t('dreamform.subscription-failed-invalid-email'), public: true);
-			return;
+		if (!V::email($email)) {
+			$this->cancel('dreamform.submission.error.email', public: true);
 		}
 
 		// collect data for the request
 		$data = A::filter([
-			'email' => $email->value(),
+			'email' => $email,
 			'metadata' => static::metadata(),
 			'tags' => static::submissionTags(),
 			'referrer_url' => $this->submission()->referer(),
 		], fn ($value) => $value !== null);
+
+		$logData = ['template' => ['email' => $email]];
 
 		// subscribe the user
 		$subscribeRequest = static::request('POST', '/subscribers', A::merge($data, A::filter([
@@ -157,16 +171,20 @@ class ButtondownAction extends Action
 		if ($subscribeRequest->code() !== 201) {
 			// update subscriber data if email already exists
 			if (!static::simpleMode() && $subscribeRequest->json()['code'] === 'email_already_exists') {
-				$updateRequest = static::request('PATCH', "/subscribers/{$email->value()}", $data);
+				$updateRequest = static::request('PATCH', "/subscribers/{$email}", array_filter($data, fn ($key) => $key !== 'email', ARRAY_FILTER_USE_KEY));
 
 				// send reminder if subscriber is unactivated
 				if ($updateRequest->json()['subscriber_type'] === 'unactivated') {
-					$reminderRequest = static::request('POST', "/subscribers/{$email->value()}/send-reminder");
+					$reminderRequest = static::request('POST', "/subscribers/{$email}/send-reminder");
 					if ($reminderRequest->code() !== 200) {
 						$this->cancel($reminderRequest->json()['detail']);
 					}
+
+					$this->log(icon: 'buttondown', title: 'dreamform.actions.buttondown.log.reminder', data: $logData, type: 'none');
+					return;
 				}
 
+				$this->log(icon: 'buttondown', title: 'dreamform.actions.buttondown.log.alreadySubscribed', data: $logData, type: 'none');
 				return;
 			}
 
@@ -175,6 +193,7 @@ class ButtondownAction extends Action
 		}
 
 		// everything went well
+		$this->log(icon: 'buttondown', title: 'dreamform.actions.buttondown.log.success', data: $logData, type: 'none');
 	}
 
 	/**
@@ -206,10 +225,7 @@ class ButtondownAction extends Action
 	 */
 	protected static function request(string $method, string $url, array $data = []): Remote
 	{
-		$apiKey = App::instance()->option('tobimori.dreamform.actions.buttondown.apiKey');
-		if (is_callable($apiKey)) {
-			$apiKey = $apiKey();
-		}
+		$apiKey = DreamForm::option('actions.buttondown.apiKey');
 
 		return Remote::$method(static::apiUrl() . $url, A::merge(
 			[
@@ -230,7 +246,7 @@ class ButtondownAction extends Action
 	 */
 	public static function isAvailable(): bool
 	{
-		$apiToken = App::instance()->option('tobimori.dreamform.actions.buttondown.apiKey');
+		$apiToken = DreamForm::option('actions.buttondown.apiKey');
 		if (!$apiToken) {
 			return false;
 		}
@@ -247,5 +263,16 @@ class ButtondownAction extends Action
 	public static function group(): string
 	{
 		return 'newsletter';
+	}
+
+	/**
+	 * Returns the base log settings for the action
+	 */
+	protected function logSettings(): array|bool
+	{
+		return [
+			'icon' => 'buttondown',
+			'title' => 'dreamform.actions.buttondown.name'
+		];
 	}
 }

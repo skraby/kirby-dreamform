@@ -11,6 +11,10 @@ use tobimori\DreamForm\Fields\Field;
 use tobimori\DreamForm\Guards\Guard;
 use tobimori\DreamForm\Models\FormPage;
 
+/**
+ * Main class for the plugin
+ * Contains registry for performers & fields
+ */
 final class DreamForm
 {
 	/**
@@ -36,7 +40,7 @@ final class DreamForm
 	 */
 	public static function guards(): array
 	{
-		$active = App::instance()->option('tobimori.dreamform.guards.available', ['csrf']);
+		$active = DreamForm::option('guards.available', ['csrf']);
 		$registered = static::$registeredGuards;
 
 		$guards = [];
@@ -73,7 +77,7 @@ final class DreamForm
 	 */
 	public static function fields(FormPage|null $formPage = null): array
 	{
-		$active = App::instance()->option('tobimori.dreamform.fields.available', true);
+		$active = DreamForm::option('fields.available', true);
 		$registered = static::$registeredFields;
 
 		$fields = [];
@@ -124,7 +128,7 @@ final class DreamForm
 	 */
 	public static function actions(): array
 	{
-		$active = App::instance()->option('tobimori.dreamform.actions.available', true);
+		$active = DreamForm::option('actions.available', true);
 		$registered = static::$registeredActions;
 
 		$actions = [];
@@ -222,12 +226,7 @@ final class DreamForm
 	 */
 	public static function debugMode(): bool
 	{
-		$option = App::instance()->option('tobimori.dreamform.debug');
-		if (is_callable($option)) {
-			$option = $option();
-		}
-
-		return $option;
+		return DreamForm::option('debug');
 	}
 
 	/**
@@ -244,5 +243,18 @@ final class DreamForm
 	public static function userAgent(): string
 	{
 		return "Kirby DreamForm/" . App::plugin('tobimori/dreamform')->version() . " (+https://plugins.andkindness.com/dreamform)";
+	}
+
+	/**
+	 * Returns a plugin option
+	 */
+	public static function option(string $key, mixed $default = null): mixed
+	{
+		$option = App::instance()->option("tobimori.dreamform.{$key}", $default);
+		if (is_callable($option)) {
+			$option = $option();
+		}
+
+		return $option;
 	}
 }

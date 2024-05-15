@@ -3,6 +3,7 @@
 namespace tobimori\DreamForm\Models;
 
 use Kirby\Cms\App;
+use Kirby\Toolkit\A;
 use Kirby\Toolkit\Str;
 use tobimori\DreamForm\DreamForm;
 use tobimori\DreamForm\Models\SubmissionPage;
@@ -18,8 +19,8 @@ trait SubmissionSession
 	public function storeSession(): static
 	{
 		$kirby = App::instance();
-		$mode = $kirby->option('tobimori.dreamform.mode', 'prg');
-		if ($mode === 'api' || $mode === 'htmx' && Htmx::isHtmxRequest()) {
+		$mode = DreamForm::option('mode', 'prg');
+		if ($mode === 'api' || Htmx::isActive() && Htmx::isHtmxRequest()) {
 			return $this->storeSessionlessCache();
 		}
 
@@ -34,13 +35,12 @@ trait SubmissionSession
 
 	public function storeSessionlessCache(): static
 	{
-		$kirby = App::instance();
-		if ($kirby->option('tobimori.dreamform.mode', 'prg') === 'prg' && !Htmx::isHtmxRequest()) {
+		if (A::has(['prg', 'htmx'], DreamForm::option('mode', 'prg')) && !Htmx::isHtmxRequest()) {
 			return $this->storeSession();
 		}
 
 		if (!$this->exists()) {
-			$kirby->cache('tobimori.dreamform.sessionless')->set($this->slug(), serialize($this), 60 * 24);
+			App::instance()->cache('tobimori.dreamform.sessionless')->set($this->slug(), serialize($this), 60 * 24);
 		}
 
 		return static::$session = $this;
@@ -52,7 +52,7 @@ trait SubmissionSession
 	public static function fromSession(): SubmissionPage|null
 	{
 		$kirby = App::instance();
-		$mode = $kirby->option('tobimori.dreamform.mode', 'prg');
+		$mode = DreamForm::option('mode', 'prg');
 		if ($mode === 'api' || $mode === 'htmx' && Htmx::isHtmxRequest()) {
 			return static::fromSessionlessCache();
 		}
@@ -63,7 +63,7 @@ trait SubmissionSession
 
 		$session = $kirby->session()->get(DreamForm::SESSION_KEY, null);
 		if (is_string($session)) { // if the page exists on disk, we store the UUID only so we can save files
-			$session = DreamForm::findPageOrDraftRecursive($session);
+			$session = DreamForm::findPageOrDraftRecursive("page://{$session}");
 		}
 
 		if (!($session instanceof SubmissionPage)) {
@@ -91,7 +91,7 @@ trait SubmissionSession
 	public static function fromSessionlessCache(): SubmissionPage|null
 	{
 		$kirby = App::instance();
-		if ($kirby->option('tobimori.dreamform.mode', 'prg') === 'prg' && !Htmx::isHtmxRequest()) {
+		if (DreamForm::option('mode', 'prg') === 'prg' && !Htmx::isHtmxRequest()) {
 			return static::fromSession();
 		}
 
@@ -107,6 +107,10 @@ trait SubmissionSession
 		$id = Htmx::decrypt($raw);
 		if (Str::startsWith($id, 'page://')) {
 			static::$session = DreamForm::findPageOrDraftRecursive($id);
+
+			if (static::$session) {
+				return static::$session;
+			}
 		}
 
 		$cache = $kirby->cache('tobimori.dreamform.sessionless');

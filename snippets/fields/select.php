@@ -17,15 +17,21 @@ snippet('dreamform/fields/partials/wrapper', $arguments = compact('block', 'fiel
 snippet('dreamform/fields/partials/label', $arguments); ?>
 
 <select <?= attr(A::merge($attr['input'], [
-	'id' => $block->id(),
+	'id' => $form->elementId($block->id()),
 	'name' => $block->key(),
 	'required' => $required ?? null,
 ])) ?>>
-	<?php if ($block->placeholder()->isNotEmpty()) : ?>
-		<option value="" disabled selected hidden><?= $block->placeholder()->escape() ?></option>
-	<?php endif ?>
+	<option <?= attr([
+		"selected" => !($selected = $form->valueFor($block->key())?->value()),
+		"value" => true,
+		"disabled" => true,
+		"hidden" => true
+	]) ?>><?= $block->placeholder()->escape() ?></option>
 	<?php foreach ($field->options() as $value => $label) : ?>
-		<option <?= attr(['value' => $value]) ?>>
+		<option <?= attr([
+			'value' => $value,
+			"selected" => $selected === $value
+		]) ?>>
 			<?= Escape::html($label) ?>
 		</option>
 	<?php endforeach ?>

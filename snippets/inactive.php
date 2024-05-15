@@ -5,8 +5,10 @@
  *
  * @var \Kirby\Cms\Page $page
  * @var array|null $attr
- */ ?>
+ */
+
+?>
 
 <div <?= attr($attr['inactive']) ?>>
-	<?= t('dreamform.inactive-form') ?>
+	<?= t('dreamform.form.inactiveMessage.default') ?>
 </div>

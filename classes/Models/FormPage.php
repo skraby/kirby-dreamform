@@ -16,14 +16,20 @@ use Kirby\Toolkit\Str;
 use Kirby\Uuid\Uuid;
 use tobimori\DreamForm\DreamForm;
 use tobimori\DreamForm\Exceptions\PerformerException;
-use tobimori\DreamForm\Exceptions\SilentPerformerException;
 use tobimori\DreamForm\Guards\LicenseGuard;
 use tobimori\DreamForm\Permissions\FormPermissions;
 use tobimori\DreamForm\Support\Htmx;
 
+/**
+ * The form page stores the form configuration and is used
+ * to trigger the submission process.
+ */
 class FormPage extends BasePage
 {
+	/** @var \Kirby\Cms\Collection[] */
 	private array $fields;
+
+	/** @var \Kirby\Cms\Layouts[] */
 	private array $steps;
 
 	/**
@@ -34,6 +40,9 @@ class FormPage extends BasePage
 		return $this->content()->get('title')->or($this->slug());
 	}
 
+	/**
+	 * Returns additional attributes needed for HTMX support if such is enabled
+	 */
 	public function htmxAttr(Page $page, array $attr, SubmissionPage|null $submission): array
 	{
 		if (!Htmx::isActive()) {
@@ -44,7 +53,10 @@ class FormPage extends BasePage
 			'hx-post' => $this->url(),
 			'hx-swap' => 'outerHTML',
 			'hx-vals' => Json::encode(array_filter([
-				'dreamform:session' => $submission && $this->isMultiStep() && Htmx::isHtmxRequest() ? Htmx::encrypt($submission->slug()) : null,
+				'dreamform:session' => $submission && $submission?->form()->is($this) && $this->isMultiStep() ?
+					Htmx::encrypt(
+						($submission->exists() ? "page://" : "") . $submission->slug()
+					) : null,
 				'dreamform:page' => Htmx::encrypt($page->uuid()->toString()),
 				'dreamform:attr' => Htmx::encrypt(Json::encode($attr))
 			], fn ($value) => $value !== null))
@@ -53,16 +65,25 @@ class FormPage extends BasePage
 		return $htmx;
 	}
 
+	/**
+	 * Returns the attributes for the form as array
+	 */
 	public function attr(): array
 	{
 		$attr = [
+			'id' => $this->elementId(),
 			'enctype' => $this->enctype(),
 			'method' => 'POST',
 			'novalidate' => 'novalidate',
-			(App::instance()->option('tobimori.dreamform.useDataAttributes') ? 'data-form-url' : 'action') => $this->url()
+			(DreamForm::option('useDataAttributes') ? 'data-form-url' : 'action') => $this->url()
 		];
 
 		return $attr;
+	}
+
+	public function elementId(string $suffix = ''): string
+	{
+		return $this->uuid()->id() . ($suffix ? "/{$suffix}" : '');
 	}
 
 	/**
@@ -80,7 +101,7 @@ class FormPage extends BasePage
 	public function currentLayouts(): Layouts
 	{
 		$submission = SubmissionPage::fromSession();
-		if ($submission) {
+		if ($submission && $submission->form()->is($this)) {
 			return $this->layouts($submission->currentStep());
 		}
 
@@ -91,6 +112,8 @@ class FormPage extends BasePage
 	 * Returns an array of steps for a multi-step form
 	 * This is an array, because Kirby's collection class does not allow
 	 * for empty IDs and Layouts instances can't have an ID
+	 *
+	 * @return \Kirby\Cms\Layouts[]
 	 */
 	public function steps(): array
 	{
@@ -158,6 +181,7 @@ class FormPage extends BasePage
 
 	/**
 	 * Returns all guards for the form
+	 * @return \tobimori\DreamForm\Guards\Guard[]
 	 */
 	public function guards(): array
 	{
@@ -229,7 +253,7 @@ class FormPage extends BasePage
 		// create a new submission or get the existing one from the session
 		$submission = SubmissionPage::fromSession() ?? $this->initSubmission();
 		// if the submission is from a different form, create a new one
-		if ($submission->parent()->id() !== $this->id()) {
+		if (!$submission->form()->is($this)) {
 			$submission = $this->initSubmission();
 		}
 
@@ -238,143 +262,38 @@ class FormPage extends BasePage
 		 * Each step is a separate function
 		 */
 		try {
-			foreach ([
-				[$this, 'applyHook'],
-				[$submission, 'collectMetadata'],
-				[$this, 'handleGuards'],
-				[$this, 'handleFields'],
-				[$this, 'handlePostValidationGuards'],
-				[$this, 'handleActions'],
-				[$this, 'finishSubmission'],
-				[$this, 'handleAfterSubmitFields'],
-			] as $fn) {
-				$submission = $fn($submission);
-			}
+			$submission = $submission
+				->applyHook('before')
+				->collectMetadata()
+				->handleGuards()
+				->handleFields()
+				->handleGuards(postValidation: true)
+				->handleActions()
+				->finalize()
+				->handleAfterSubmitFields();
 		} catch (Exception $e) {
-			// if an guard fails, set a common error and stop the form submission
 			if ($e instanceof PerformerException) {
-				$submission->setError($e->getMessage());
-
 				// if the exception is silent, stop the form submission early as "successful"
-			} elseif ($e instanceof SilentPerformerException) {
-				return $submission->storeSession()->finish(false);
+				if ($e->isSilent()) {
+					return $submission->storeSession()->finish(false);
+				}
 			}
+
+			$submission->setError($e->getMessage());
 		}
 
 		// store the submission in the session
 		return $submission->storeSession();
 	}
 
-	protected function applyHook(SubmissionPage $submission, string $type = 'before'): SubmissionPage
-	{
-		return App::instance()->apply(
-			"dreamform.submit:{$type}",
-			['submission' => $submission, 'form' => $this],
-			'submission'
-		);
-	}
-
-	/**
-	 * Handles the form submission guards
-	 */
-	protected function handleGuards(SubmissionPage $submission, bool $postValidation = false): SubmissionPage
-	{
-		foreach ($this->guards() as $guard) {
-			$postValidation ? $guard->postValidation($submission) : $guard->run();
-		}
-
-		return $submission;
-	}
-
-	/**
-	 * Handles the form submission guards post-validation methods
-	 */
-	protected function handlePostValidationGuards(SubmissionPage $submission): SubmissionPage
-	{
-		return $this->handleGuards($submission, true);
-	}
-
-	/**
-	 * Handles the form field validation, sanitzaion and error handling
-	 */
-	protected function handleFields(SubmissionPage $submission): SubmissionPage
-	{
-		$currentStep = App::instance()->request()->query()->get('dreamform-step', 1);
-		foreach ($this->fields($currentStep) as $field) {
-			// skip "decorative" fields that don't have a value
-			if (!$field::hasValue()) {
-				continue;
-			}
-
-			// create a field instance & set the value from the request
-			$field = $submission->updateFieldFromRequest($field);
-
-			// validate the field
-			$validation = $field->validate();
-
-			if ($validation !== true) {
-				// if the validation fails, set an error in the submission state
-				$submission = $submission->setError(field: $field->key(), message: $validation);
-			} else {
-				// otherwise add it to the content of the submission
-				$submission = $submission->setField($field)->removeError($field->key());
-			}
-		}
-
-		return $submission;
-	}
-
 	/**
 	 * Handles the form submission actions
 	 *
-	 * @internal
+	 * @deprecated Use $submission->handleActions() instead
 	 */
 	public function handleActions(SubmissionPage $submission): SubmissionPage
 	{
-		if (
-			$submission->isFinalStep()
-			&& $submission->isSuccessful()
-			&& $submission->isHam()
-		) {
-			$submission = $submission->updateState(['actionsdidrun' => true]);
-
-			foreach ($submission->createActions() as $action) {
-				$action->run();
-			}
-		}
-
-		return $submission;
-	}
-
-	/**
-	 * Finishes the form submission
-	 */
-	protected function finishSubmission(SubmissionPage $submission): SubmissionPage
-	{
-		if (!$submission->isSuccessful()) {
-			return $submission;
-		}
-
-		if ($submission->isFinalStep()) {
-			return $submission->finish();
-		}
-
-		return $submission->advanceStep();
-	}
-
-	/**
-	 * Handles the after-submit hooks for the fields
-	 */
-	protected function handleAfterSubmitFields(SubmissionPage $submission): SubmissionPage
-	{
-		$currentStep = App::instance()->request()->query()->get('dreamform-step', 1);
-		if ($submission->isSuccessful()) {
-			foreach ($this->fields($currentStep) as $field) {
-				$field->afterSubmit($submission);
-			}
-		}
-
-		return $submission;
+		return $submission->handleActions();
 	}
 
 	/**
@@ -383,7 +302,7 @@ class FormPage extends BasePage
 	public function render(array $data = [], $contentType = 'html'): string
 	{
 		$kirby = App::instance();
-		$mode = $kirby->option('tobimori.dreamform.mode', 'prg');
+		$mode = DreamForm::option('mode', 'prg');
 
 		if ($kirby->request()->method() === 'POST') {
 			$submission = $this->submit();
@@ -397,14 +316,14 @@ class FormPage extends BasePage
 			}
 
 			// if dreamform is used in htmx mode, return the enhanced HTML
-			if ($mode === 'htmx' && $kirby->request()->header('Hx-Request') === 'true') {
+			if ($mode === 'htmx' && Htmx::isHtmxRequest()) {
 				try {
 					$page = DreamForm::findPageOrDraftRecursive(Htmx::decrypt($kirby->request()->body()->get('dreamform:page')));
 					$attr = Json::decode(Htmx::decrypt($kirby->request()->body()->get('dreamform:attr')));
 
 					// if an error is thrown, this means the data must have been tampered with
 				} catch (Exception $e) {
-					return t('dreamform.generic-error');
+					return t('dreamform.submission.error.generic');
 				}
 
 				if ($submission->state()->get('redirect')->value()) {
@@ -449,6 +368,7 @@ class FormPage extends BasePage
 		$url = parent::url($options);
 		if ($this->isMultiStep()) {
 			$submission = SubmissionPage::fromSession();
+
 			if ($submission) {
 				$url .= "?dreamform-step={$submission->currentStep()}";
 			} else {
@@ -485,11 +405,11 @@ class FormPage extends BasePage
 		foreach ($page->fields() as $field) {
 			$key = $field->key();
 			if (in_array($key, $keys)) {
-				throw new Exception(tt('dreamform.duplicate-key', ['key' => $key]));
+				throw new Exception(tt('dreamform.form.error.duplicateKey', ['key' => $key]));
 			}
 
 			if (Str::startsWith($key, 'dreamform')) {
-				throw new Exception(tt('dreamform.reserved-key', ['key' => $key]));
+				throw new Exception(tt('dreamform.form.error.reservedKey', ['key' => $key]));
 			}
 
 			$keys[] = $key;
@@ -512,7 +432,7 @@ class FormPage extends BasePage
 	public function valueFor(string $key): Field|null
 	{
 		$submission = SubmissionPage::fromSession();
-		if (!$submission) {
+		if (!$submission || !$submission->form()->is($this)) {
 			return $this->valueFromQuery($key);
 		}
 
@@ -527,7 +447,6 @@ class FormPage extends BasePage
 	public function valueFromQuery(string $key): Field|null
 	{
 		$key = DreamForm::normalizeKey($key);
-
 		if (!($value = App::instance()->request()->query()->get($key))) {
 			return null;
 		}
@@ -549,7 +468,7 @@ class FormPage extends BasePage
 	 */
 	public function errorFor(string $key): string|null
 	{
-		return SubmissionPage::fromSession()?->errorFor($key);
+		return SubmissionPage::fromSession()?->errorFor($key, $this);
 	}
 
 	/**

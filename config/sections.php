@@ -20,6 +20,9 @@ return [
 			'isPartial' => function () {
 				return !$this->model()->isFinished();
 			},
+			'log' => function () {
+				return $this->model()->log()->toArray();
+			}
 		]
 	],
 	'dreamform-license' => [

@@ -4,13 +4,13 @@ use Kirby\Cms\App;
 use tobimori\DreamForm\DreamForm;
 
 return function () {
-	$layouts = App::instance()->option('tobimori.dreamform.layouts', ['1/1']);
+	$layouts = DreamForm::option('layouts', ['1/1']);
 	$fieldsets = [];
 
 	foreach (DreamForm::fields() as $type => $field) {
 		if (!isset($fieldsets[$group = $field::group()])) {
 			$fieldsets[$group] = [
-				'label' => t("dreamform.{$group}-fields"),
+				'label' => t("dreamform.fields.category.{$group}"),
 				'type' => 'group',
 				'fieldsets' => []
 			];
@@ -22,7 +22,7 @@ return function () {
 	return [
 		'label' => t('dreamform.fields'),
 		'type' => 'layout',
-		'layouts' => App::instance()->option('tobimori.dreamform.multiStep', true) ? ["dreamform-page", ...$layouts] : $layouts,
+		'layouts' => DreamForm::option('multiStep', true) ? ["dreamform-page", ...$layouts] : $layouts,
 		'fieldsets' => $fieldsets
 	];
 };

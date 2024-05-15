@@ -6,13 +6,14 @@ use Kirby\Cms\App;
 use Kirby\Http\Remote;
 use Kirby\Toolkit\Str;
 use Kirby\Toolkit\V;
+use tobimori\DreamForm\DreamForm;
 
 class EmailField extends Field
 {
 	public static function blueprint(): array
 	{
 		return [
-			'title' => t('dreamform.email-field'),
+			'name' => t('dreamform.fields.email.name'),
 			'preview' => 'text-field',
 			'wysiwyg' => true,
 			'icon' => 'email',
@@ -39,7 +40,7 @@ class EmailField extends Field
 	public function submissionBlueprint(): array|null
 	{
 		return [
-			'label' => $this->block()->label()->value() ?? t('dreamform.email-field'),
+			'label' => $this->block()->label()->value() ?? t('dreamform.fields.email.name'),
 			'icon' => 'email',
 			'type' => 'text'
 		];
@@ -55,7 +56,7 @@ class EmailField extends Field
 	 */
 	protected function hasMxRecord(): bool
 	{
-		if (App::instance()->option('tobimori.dreamform.fields.email.dnsLookup') === false) {
+		if (DreamForm::option('fields.email.dnsLookup') === false) {
 			return true;
 		}
 
@@ -67,11 +68,11 @@ class EmailField extends Field
 	 */
 	protected function isDisposableEmail(): bool
 	{
-		if (App::instance()->option('tobimori.dreamform.fields.email.disposableEmails.disallow') === false) {
+		if (DreamForm::option('fields.email.disposableEmails.disallow') === false) {
 			return false;
 		}
 
-		$url = App::instance()->option('tobimori.dreamform.fields.email.disposableEmails.list');
+		$url = DreamForm::option('fields.email.disposableEmails.list');
 		$list = static::cache('disposable', function () use ($url) {
 			$request = Remote::get($url);
 			return $request->code() === 200 ? Str::split($request->content(), PHP_EOL) : [];

@@ -12,6 +12,9 @@ use tobimori\DreamForm\Models\FormPage;
 use tobimori\DreamForm\Models\SubmissionPage;
 use tobimori\DreamForm\Support\HasCache;
 
+/**
+ * Base class for all fields
+ */
 abstract class Field
 {
 	use HasCache;
@@ -55,7 +58,7 @@ abstract class Field
 	 */
 	public function errorMessage(string $key = 'errorMessage'): string
 	{
-		return $this->block()->{$key}()->isNotEmpty() ? $this->block()->{$key}() : t('dreamform.error-message-default');
+		return $this->block()->{$key}()->isNotEmpty() ? $this->block()->{$key}() : t('dreamform.fields.error.required');
 	}
 
 	/**

@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit910c4189a868d9db3fa89792673c4e88
+class ComposerStaticInit99ea25880654549400db6165b3f448d9
 {
     public static $prefixLengthsPsr4 = array (
         't' => 
@@ -40,6 +40,9 @@ class ComposerStaticInit910c4189a868d9db3fa89792673c4e88
         'tobimori\\DreamForm\\Actions\\ConditionalAction' => __DIR__ . '/../..' . '/classes/Actions/ConditionalAction.php',
         'tobimori\\DreamForm\\Actions\\DiscordWebhookAction' => __DIR__ . '/../..' . '/classes/Actions/DiscordWebhookAction.php',
         'tobimori\\DreamForm\\Actions\\EmailAction' => __DIR__ . '/../..' . '/classes/Actions/EmailAction.php',
+        'tobimori\\DreamForm\\Actions\\Log\\ActionLog' => __DIR__ . '/../..' . '/classes/Actions/Log/ActionLog.php',
+        'tobimori\\DreamForm\\Actions\\Log\\ActionLogEntry' => __DIR__ . '/../..' . '/classes/Actions/Log/ActionLogEntry.php',
+        'tobimori\\DreamForm\\Actions\\Log\\HasActionLog' => __DIR__ . '/../..' . '/classes/Actions/Log/HasActionLog.php',
         'tobimori\\DreamForm\\Actions\\MailchimpAction' => __DIR__ . '/../..' . '/classes/Actions/MailchimpAction.php',
         'tobimori\\DreamForm\\Actions\\RedirectAction' => __DIR__ . '/../..' . '/classes/Actions/RedirectAction.php',
         'tobimori\\DreamForm\\Actions\\WebhookAction' => __DIR__ . '/../..' . '/classes/Actions/WebhookAction.php',
@@ -70,7 +73,7 @@ class ComposerStaticInit910c4189a868d9db3fa89792673c4e88
         'tobimori\\DreamForm\\Models\\FormPage' => __DIR__ . '/../..' . '/classes/Models/FormPage.php',
         'tobimori\\DreamForm\\Models\\FormsPage' => __DIR__ . '/../..' . '/classes/Models/FormsPage.php',
         'tobimori\\DreamForm\\Models\\SubmissionPage' => __DIR__ . '/../..' . '/classes/Models/SubmissionPage.php',
-        'tobimori\\DreamForm\\Models\\Submission\\SubmissionSession' => __DIR__ . '/../..' . '/classes/Models/Submission/SubmissionSession.php',
+        'tobimori\\DreamForm\\Models\\SubmissionSession' => __DIR__ . '/../..' . '/classes/Models/SubmissionSession.php',
         'tobimori\\DreamForm\\Performer' => __DIR__ . '/../..' . '/classes/Performer.php',
         'tobimori\\DreamForm\\Permissions\\FormPermissions' => __DIR__ . '/../..' . '/classes/Permissions/FormPermissions.php',
         'tobimori\\DreamForm\\Permissions\\SubmissionPermissions' => __DIR__ . '/../..' . '/classes/Permissions/SubmissionPermissions.php',
@@ -83,9 +86,9 @@ class ComposerStaticInit910c4189a868d9db3fa89792673c4e88
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit910c4189a868d9db3fa89792673c4e88::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit910c4189a868d9db3fa89792673c4e88::$prefixDirsPsr4;
-            $loader->classMap = ComposerStaticInit910c4189a868d9db3fa89792673c4e88::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit99ea25880654549400db6165b3f448d9::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit99ea25880654549400db6165b3f448d9::$prefixDirsPsr4;
+            $loader->classMap = ComposerStaticInit99ea25880654549400db6165b3f448d9::$classMap;
 
         }, null, ClassLoader::class);
     }

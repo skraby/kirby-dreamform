@@ -27,17 +27,17 @@ return function () {
 		'sections' => ['submissions' => [
 			'label' => t('dreamform.submissions'),
 			'type' => 'pages',
-			'empty' => 'dreamform.empty-submissions',
+			'empty' => 'dreamform.submissions.empty',
 			'template' => 'submission',
 			'layout' => 'table',
 			'create' => false,
-			'image' => App::instance()->option('tobimori.dreamform.integrations.gravatar'),
+			'image' => DreamForm::option('integrations.gravatar'),
 			'text' => false,
 			'search' => true,
 			'sortBy' => 'sortDate desc',
 			'columns' => A::merge([
 				'date' => [
-					'label' => t('dreamform.submitted-at'),
+					'label' => t('dreamform.submission.submittedAt'),
 					'type' => 'html',
 					'value' => '<a href="{{ page.panel.url }}">{{ page.title }}</a>',
 					'mobile' => true

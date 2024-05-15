@@ -20,12 +20,21 @@ use Kirby\Toolkit\Str;
 use Kirby\Toolkit\V;
 use tobimori\DreamForm\DreamForm;
 use tobimori\DreamForm\Fields\Field as FormField;
+use tobimori\DreamForm\Models\Log\HasSubmissionLog;
 use tobimori\DreamForm\Permissions\SubmissionPermissions;
 
+/**
+ * The submission page is the heart of the plugin.
+ *
+ * It's the represenation of a form submission,
+ * and contains logic to handle the complete submission process.
+ */
 class SubmissionPage extends BasePage
 {
+	use HasSubmissionLog;
 	use SubmissionMetadata;
 	use SubmissionSession;
+	use SubmissionHandling;
 
 	/**
 	 * Returns the submission referer (for PRG redirects)
@@ -75,9 +84,9 @@ class SubmissionPage extends BasePage
 	public function redirectToReferer(): Responder
 	{
 		$kirby = App::instance();
-		$append = '';
-		if ($kirby->option('tobimori.dreamform.mode') !== 'api' && $kirby->option('cache.pages.active') === true) {
-			$append = '?x=';
+		$append = "#{$this->form()->uuid()->id()}";
+		if (DreamForm::option('mode') !== 'api' && $kirby->option('cache.pages.active') === true) {
+			$append = '?x=' . $append;
 		}
 
 		return  $kirby->response()->redirect(
@@ -136,8 +145,12 @@ class SubmissionPage extends BasePage
 	/**
 	 * Returns the error message for a field in the submission state
 	 */
-	public function errorFor(string $key = null): string|null
+	public function errorFor(string $key = null, FormPage $form = null): string|null
 	{
+		if (!$form?->is($this->form())) {
+			return null;
+		}
+
 		if ($key === null) {
 			return $this->state()->get('error')->value();
 		}
@@ -160,7 +173,7 @@ class SubmissionPage extends BasePage
 			$state['error'] = $message;
 		}
 
-		return $this->updateAndSave(['dreamform_state' => $state]);
+		return $this->update(['dreamform_state' => $state]);
 	}
 
 	/**
@@ -179,7 +192,7 @@ class SubmissionPage extends BasePage
 			$state['success'] = true;
 		}
 
-		return $this->updateAndSave(['dreamform_state' => $state]);
+		return $this->update(['dreamform_state' => $state]);
 	}
 
 	/**
@@ -219,13 +232,13 @@ class SubmissionPage extends BasePage
 	 */
 	public function setField(FormField $field): static
 	{
-		return $this->updateAndSave([$field->key() => $field->value()->value()]);
+		return $this->update([$field->key() => $field->value()->value()]);
 	}
 
 	/**
 	 * Create actions from the form's content
 	 */
-	public function createActions(Blocks $blocks = null): Collection
+	public function createActions(Blocks $blocks = null, bool $force = false): Collection
 	{
 		$blocks ??= $this->form()->content()->get('actions')->toBlocks();
 
@@ -233,7 +246,7 @@ class SubmissionPage extends BasePage
 		foreach ($blocks as $block) {
 			$type = Str::replace($block->type(), '-action', '');
 
-			$action = DreamForm::action($type, $block, $this);
+			$action = DreamForm::action($type, $block, $this, $force);
 			if ($action) {
 				$actions[] = $action;
 			}
@@ -302,16 +315,15 @@ class SubmissionPage extends BasePage
 		}
 
 		$state = $this->state()->toArray();
-		$state['step'] = $state['step'] + 1;
-
-		$this->content = $this->content()->update(['dreamform_state' => $state]);
-		$this->saveSubmission();
+		$this->updateState(['step' => $state['step'] + 1]);
 
 		return $this;
 	}
 
 	/**
 	 * Finish the submission and save it to the disk
+	 *
+	 * TODO: merge with $submission->finalize()?
 	 */
 	public function finish(bool $saveToDisk = true): static
 	{
@@ -320,11 +332,7 @@ class SubmissionPage extends BasePage
 		$state['partial'] = false;
 		$this->content = $this->content()->update(['dreamform_state' => $state]);
 
-		$submission = App::instance()->apply(
-			'dreamform.submit:after',
-			['submission' => $this, 'form' => $this->form()],
-			'submission'
-		);
+		$submission = $this->applyHook('after');
 
 		if ($saveToDisk) {
 			return $submission->saveSubmission();
@@ -339,7 +347,7 @@ class SubmissionPage extends BasePage
 	public function saveSubmission(): static
 	{
 		if (
-			App::instance()->option('tobimori.dreamform.storeSubmissions', true) !== true
+			DreamForm::option('storeSubmissions', true) !== true
 			|| !$this->form()->storeSubmissions()->toBool()
 		) {
 			return $this;
@@ -350,7 +358,6 @@ class SubmissionPage extends BasePage
 			'kirby',
 			fn () => $this->save($this->content()->toArray(), App::instance()?->languages()?->default()?->code() ?? null)
 		);
-		;
 	}
 
 	/**
@@ -378,14 +385,14 @@ class SubmissionPage extends BasePage
 	}
 
 	/**
-	 * Update the submission if it exists
+	 * Update the submission & save the update to disk if it exists
 	 */
-	protected function updateAndSave(array $data): static
+	public function update(?array $input = null, ?string $languageCode = null, bool $validate = false): static
 	{
-		$this->content = $this->content()->update($data);
+		$this->content = $this->content($languageCode)->update($input);
 
 		if ($this->exists()) {
-			return App::instance()->impersonate('kirby', fn () => $this->update($this->content()->toArray()));
+			return App::instance()->impersonate('kirby', fn () => parent::update($input, $languageCode, $validate));
 		}
 
 		return $this;
@@ -396,9 +403,7 @@ class SubmissionPage extends BasePage
 	 */
 	public function updateState(array $data): static
 	{
-		return $this->updateAndSave([
-			'dreamform_state' => $this->state()->update($data)->toArray()
-		]);
+		return $this->update(['dreamform_state' => $this->state()->update($data)->toArray()]);
 	}
 
 	/**
@@ -469,7 +474,7 @@ class SubmissionPage extends BasePage
 		$page = $this->parent();
 
 		if ($page->intendedTemplate()->name() !== 'form') {
-			throw new InvalidArgumentException('[kirby-dreamform] SubmissionPage must be a child of a FormPage');
+			throw new InvalidArgumentException('[DreamForm] SubmissionPage must be a child of a FormPage');
 		}
 
 		return $page;
@@ -497,7 +502,7 @@ class SubmissionPage extends BasePage
 	 */
 	public function gravatar(): File|null
 	{
-		if (!App::instance()->option('tobimori.dreamform.integrations.gravatar', true)) {
+		if (!DreamForm::option('integrations.gravatar', true)) {
 			return null;
 		}
 
@@ -553,6 +558,9 @@ class SubmissionPage extends BasePage
 		return parent::isAccessible();
 	}
 
+	/**
+	 * Returns the permissions object for this page
+	 */
 	public function permissions(): SubmissionPermissions
 	{
 		return new SubmissionPermissions($this);
