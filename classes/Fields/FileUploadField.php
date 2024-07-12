@@ -5,6 +5,7 @@ namespace tobimori\DreamForm\Fields;
 use Kirby\Cms\App;
 use Kirby\Content\Field as ContentField;
 use Kirby\Filesystem\F;
+use Kirby\Http\Request\Files;
 use Kirby\Toolkit\A;
 use tobimori\DreamForm\DreamForm;
 use tobimori\DreamForm\Models\FormPage;
@@ -92,7 +93,7 @@ class FileUploadField extends Field
 
 		foreach ($files as $file) {
 			if (
-				!A::has($types, F::mime($file['tmp_name']))
+				!empty($types) && !A::has($types, F::mime($file['tmp_name']))
 				|| $file['size'] > ($this->block()->maxSize()->isNotEmpty() ? $this->block()->maxSize()->toInt() * 1024 * 1024 : INF)
 			) {
 				return $this->errorMessage();
@@ -105,7 +106,7 @@ class FileUploadField extends Field
 	// abusing the sanitize method to get the file from the request
 	protected function sanitize(ContentField $value): ContentField
 	{
-		$file = App::instance()->request()->files()->get($this->key()) ?? [];
+		$file = App::instance()->request()->files()->get($this->block()->key()->or($this->id())->value());
 
 		if (!array_is_list($file)) {
 			$file = [$file];
@@ -129,7 +130,7 @@ class FileUploadField extends Field
 		$pageFiles = [];
 		($kirby = App::instance())->impersonate('kirby');
 		foreach ($files as $file) {
-			$file = App::instance()->apply(
+			$file = $kirby->apply(
 				'dreamform.upload:before',
 				['file' => $file, 'field' => $this],
 				'file'
@@ -144,7 +145,7 @@ class FileUploadField extends Field
 				]
 			]);
 
-			$file = App::instance()->apply(
+			$file = $kirby->apply(
 				'dreamform.upload:after',
 				['file' => $file, 'field' => $this],
 				'file'
